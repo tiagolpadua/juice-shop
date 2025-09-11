@@ -30,8 +30,8 @@ name: 📊 Code Quality Analysis
 on:
   push:
     # branches: [master, main, develop]
-  pull_request:
-    types: [opened, synchronize, reopened]
+  # pull_request:
+  #   types: [opened, synchronize, reopened]
   workflow_dispatch:
     inputs:
       coverage_required:
