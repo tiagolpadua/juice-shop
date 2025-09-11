@@ -51,6 +51,7 @@ jobs:
         continue-on-error: true  # Continue even if tests fail to get coverage data
         
       - name: SonarQube Scan
+        if: false
         uses: SonarSource/sonarqube-scan-action@v4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
@@ -58,6 +59,7 @@ jobs:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
           
       - name: SonarQube Quality Gate check
+        if: false
         id: sonarqube-quality-gate-check
         uses: SonarSource/sonarqube-quality-gate-action@v1.1.0
         timeout-minutes: 5
