@@ -1,0 +1,422 @@
+# ============================================================================
+# 📊 OWASP Juice Shop - SonarQube Code Quality Analysis
+# ============================================================================
+# 
+# Dedicated workflow for comprehensive code quality analysis using SonarCloud.
+# This workflow provides:
+# - Independent quality analysis separate from CI pipeline
+# - Comprehensive coverage aggregation from multiple sources
+# - Quality gate evaluation with educational context
+# - Detailed reporting for code quality metrics
+#
+# Execution Strategy:
+# - Triggered on main branch pushes and pull requests
+# - Can be run manually for ad-hoc analysis
+# - Uses cached dependencies from main CI pipeline when available
+# - Provides fallback mechanisms for robust analysis
+# ============================================================================
+
+name: 📊 Code Quality Analysis
+
+# ============================================================================
+# 🎯 WORKFLOW TRIGGERS
+# ============================================================================
+# Optimized triggers for quality analysis:
+# - push: Only on main branches to avoid noise
+# - pull_request: For quality gate checks on PRs
+# - workflow_dispatch: Manual execution with options
+# - schedule: Weekly analysis for trend monitoring
+# ============================================================================
+on:
+  push:
+    # branches: [master, main, develop]
+  # pull_request:
+  #   types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      coverage_required:
+        description: 'Require coverage reports from CI'
+        required: false
+        default: true
+        type: boolean
+      deep_analysis:
+        description: 'Enable deep analysis mode'
+        required: false
+        default: false
+        type: boolean
+  schedule:
+    # Weekly analysis every Sunday at 2 AM UTC
+    - cron: '0 2 * * 0'
+
+# ============================================================================
+# 🔒 CONCURRENCY MANAGEMENT
+# ============================================================================
+# Prevent overlapping SonarQube analysis runs
+concurrency:
+  group: sonarqube-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# ============================================================================
+# 🌍 ENVIRONMENT CONFIGURATION
+# ============================================================================
+env:
+  NODE_VERSION: '22'
+  SONAR_SCANNER_VERSION: '5.0.1.3006'
+  FORCE_COLOR: '1'
+  CI: true
+
+# ============================================================================
+# 🛡️ SECURITY PERMISSIONS
+# ============================================================================
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  security-events: write
+
+jobs:
+  # ===================================
+  # 📊 SONARQUBE ANALYSIS
+  # ===================================
+  # Purpose: Comprehensive code quality analysis with SonarCloud
+  # Strategy: Multiple analysis methods with fallback mechanisms
+  # Coverage: Aggregates test coverage from multiple sources
+  # Reporting: Quality gate evaluation with educational context
+  # ===================================
+  sonarqube-analysis:
+    name: 📊 SonarCloud Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      # Full repository checkout for comprehensive analysis
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required for SonarQube blame information and trend analysis
+          token: ${{ secrets.GITHUB_TOKEN }}
+          
+      # Setup Node.js environment
+      - name: 🔧 Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
+          
+      # Attempt to restore dependencies from CI cache
+      - name: 💾 Restore dependencies cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            node_modules
+            frontend/node_modules
+            frontend/dist
+          key: v1-${{ runner.os }}-node-${{ hashFiles('**/package-lock.json', 'frontend/package-lock.json') }}
+          restore-keys: |
+            v1-${{ runner.os }}-node-
+            
+      # Install dependencies if not cached
+      - name: 📦 Install dependencies
+        run: |
+          if [ ! -d "node_modules" ]; then
+            echo "Installing backend dependencies..."
+            npm ci --prefer-offline --no-audit --no-fund
+          fi
+          
+          if [ ! -d "frontend/node_modules" ]; then
+            echo "Installing frontend dependencies..."
+            cd frontend
+            npm ci --legacy-peer-deps --prefer-offline --no-audit --no-fund
+            cd ..
+          fi
+          
+      # Download coverage reports from CI workflow if available
+      - name: 📥 Download coverage artifacts
+        if: inputs.coverage_required != false
+        uses: actions/download-artifact@v4
+        with:
+          path: coverage-reports
+          pattern: '*coverage*'
+          merge-multiple: true
+        continue-on-error: true  # Don't fail if no coverage artifacts available
+        
+      # Prepare coverage structure for SonarQube
+      - name: 🔧 Prepare coverage reports
+        run: |
+          echo "Setting up coverage directory structure..."
+          mkdir -p build/reports/coverage/{server-tests,api-tests}
+          mkdir -p frontend/coverage
+          
+          # Check if coverage reports were downloaded
+          if [ -d "coverage-reports" ]; then
+            echo "Processing downloaded coverage reports..."
+            
+            # Consolidate backend coverage
+            find coverage-reports -name "*backend*" -type d | while read dir; do
+              if [ -d "$dir" ]; then
+                echo "Processing backend coverage from: $dir"
+                cp -r "$dir"/* build/reports/coverage/server-tests/ 2>/dev/null || true
+              fi
+            done
+            
+            # Consolidate API coverage
+            find coverage-reports -name "*api*" -type d | while read dir; do
+              if [ -d "$dir" ]; then
+                echo "Processing API coverage from: $dir"
+                cp -r "$dir"/* build/reports/coverage/api-tests/ 2>/dev/null || true
+              fi
+            done
+            
+            # Consolidate frontend coverage
+            find coverage-reports -name "*frontend*" -type d | while read dir; do
+              if [ -d "$dir" ]; then
+                echo "Processing frontend coverage from: $dir"
+                cp -r "$dir"/* frontend/coverage/ 2>/dev/null || true
+              fi
+            done
+          else
+            echo "No coverage reports found - analysis will proceed without coverage data"
+          fi
+          
+          # List available coverage files for debugging
+          echo "Available coverage files:"
+          find . -name "*.lcov" -o -name "lcov.info" -o -name "*.xml" | head -20
+          
+      # Generate fresh coverage if not available (fallback)
+      - name: 🧪 Generate coverage (fallback)
+        if: inputs.coverage_required == false || steps.download-coverage.conclusion == 'failure'
+        run: |
+          echo "Generating fresh coverage reports..."
+          
+          # Run backend tests with coverage
+          npm run test:server 2>/dev/null || echo "Backend tests failed or not available"
+          
+          # Run API tests with coverage
+          npm run frisby 2>/dev/null || echo "API tests failed or not available"
+          
+          # Run frontend tests with coverage
+          if [ -d "frontend" ]; then
+            cd frontend
+            npm run test -- --watch=false --browsers=ChromiumHeadless --code-coverage=true 2>/dev/null || echo "Frontend tests failed or not available"
+            cd ..
+          fi
+        continue-on-error: true
+        
+      # Setup SonarQube Scanner (Method 1: Manual Installation)
+      - name: 📊 Setup SonarQube Scanner
+        id: setup-scanner
+        run: |
+          echo "Installing SonarQube Scanner v${{ env.SONAR_SCANNER_VERSION }}..."
+          
+          # Download and extract SonarQube Scanner
+          wget -q "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-${{ env.SONAR_SCANNER_VERSION }}-linux.zip"
+          unzip -q "sonar-scanner-cli-${{ env.SONAR_SCANNER_VERSION }}-linux.zip"
+          
+          # Install with proper permissions
+          sudo mv "sonar-scanner-${{ env.SONAR_SCANNER_VERSION }}-linux" /opt/sonar-scanner
+          sudo chmod +x /opt/sonar-scanner/bin/sonar-scanner
+          
+          # Add to PATH
+          echo "/opt/sonar-scanner/bin" >> $GITHUB_PATH
+          
+          # Verify installation
+          /opt/sonar-scanner/bin/sonar-scanner --version
+          echo "scanner_installed=true" >> $GITHUB_OUTPUT
+        continue-on-error: true
+        
+      # SonarCloud Analysis (Method 1: Manual Scanner)
+      - name: 📊 SonarCloud Analysis (Manual Scanner)
+        id: sonar-manual
+        if: steps.setup-scanner.outputs.scanner_installed == 'true' && env.SONAR_TOKEN != ''
+        run: |
+          echo "Running SonarCloud analysis with manual scanner..."
+          
+          # Prepare analysis parameters
+          ANALYSIS_PARAMS=(
+            "-Dsonar.projectKey=tiagolpadua_juice-shop"
+            "-Dsonar.organization=tiagolpadua"
+            "-Dsonar.sources=."
+            "-Dsonar.host.url=https://sonarcloud.io"
+            "-Dsonar.token=${{ secrets.SONAR_TOKEN }}"
+            "-Dsonar.projectVersion=${{ github.sha }}"
+            "-Dsonar.scm.revision=${{ github.sha }}"
+          )
+          
+          # Add coverage paths if available
+          if [ -f "build/reports/coverage/server-tests/lcov.info" ]; then
+            ANALYSIS_PARAMS+=("-Dsonar.typescript.lcov.reportPaths=build/reports/coverage/server-tests/lcov.info")
+          fi
+          
+          if [ -f "build/reports/coverage/api-tests/lcov.info" ]; then
+            ANALYSIS_PARAMS+=("-Dsonar.javascript.lcov.reportPaths=build/reports/coverage/api-tests/lcov.info")
+          fi
+          
+          if [ -f "frontend/coverage/lcov.info" ]; then
+            EXISTING_TS_PATHS="${ANALYSIS_PARAMS[@]/*typescript.lcov.reportPaths*/}"
+            if [[ "$EXISTING_TS_PATHS" != "${ANALYSIS_PARAMS[@]}" ]]; then
+              # Append to existing TypeScript paths
+              ANALYSIS_PARAMS=("${ANALYSIS_PARAMS[@]/-Dsonar.typescript.lcov.reportPaths=*/"-Dsonar.typescript.lcov.reportPaths=build/reports/coverage/server-tests/lcov.info,frontend/coverage/lcov.info"}")
+            else
+              ANALYSIS_PARAMS+=("-Dsonar.typescript.lcov.reportPaths=frontend/coverage/lcov.info")
+            fi
+          fi
+          
+          # Add exclusions
+          ANALYSIS_PARAMS+=(
+            "-Dsonar.exclusions=**/node_modules/**,**/build/**,**/dist/**,**/coverage/**,**/*.min.js,**/vendor/**,frontend/src/assets/**,**/*.spec.ts,**/*.test.js"
+            "-Dsonar.test.exclusions=**/node_modules/**,test/**,**/*.spec.ts,**/*.test.js"
+          )
+          
+          # Enable deep analysis if requested
+          if [ "${{ inputs.deep_analysis }}" = "true" ]; then
+            ANALYSIS_PARAMS+=(
+              "-Dsonar.verbose=true"
+              "-Dsonar.log.level=DEBUG"
+            )
+          else
+            ANALYSIS_PARAMS+=("-Dsonar.verbose=false")
+          fi
+          
+          # Execute analysis
+          /opt/sonar-scanner/bin/sonar-scanner "${ANALYSIS_PARAMS[@]}"
+          
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        continue-on-error: true
+        
+      # SonarCloud Analysis (Method 2: Official Action - Fallback)
+      - name: 📊 SonarCloud Analysis (Official Action)
+        id: sonar-action
+        if: steps.sonar-manual.conclusion == 'failure' && env.SONAR_TOKEN != ''
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.projectKey=tiagolpadua_juice-shop
+            -Dsonar.organization=tiagolpadua
+            -Dsonar.projectVersion=${{ github.sha }}
+            -Dsonar.scm.revision=${{ github.sha }}
+            -Dsonar.exclusions=**/node_modules/**,**/build/**,**/dist/**,**/coverage/**,**/*.min.js,**/vendor/**,frontend/src/assets/**
+        continue-on-error: true
+        
+      # Quality Gate Evaluation
+      - name: 📋 Quality Gate Check
+        id: quality-gate
+        if: env.SONAR_TOKEN != '' && (steps.sonar-manual.conclusion == 'success' || steps.sonar-action.conclusion == 'success')
+        uses: SonarSource/sonarqube-quality-gate-action@v1.1.0
+        timeout-minutes: 10
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        continue-on-error: true
+        
+      # Generate comprehensive analysis report
+      - name: 📊 Generate Analysis Report
+        if: always()
+        run: |
+          echo "### 📊 SonarCloud Analysis Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Analysis method used
+          if [ "${{ steps.sonar-manual.conclusion }}" = "success" ]; then
+            echo "✅ **Analysis Method**: Manual Scanner" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.sonar-action.conclusion }}" = "success" ]; then
+            echo "✅ **Analysis Method**: Official GitHub Action" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Analysis Method**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Quality gate status
+          if [ "${{ steps.quality-gate.conclusion }}" = "success" ]; then
+            echo "✅ **Quality Gate**: Passed" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.quality-gate.conclusion }}" = "failure" ]; then
+            echo "❌ **Quality Gate**: Failed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ **Quality Gate**: Not evaluated" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Coverage information
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📈 Coverage Information" >> $GITHUB_STEP_SUMMARY
+          
+          COVERAGE_FILES=$(find . -name "*.lcov" -o -name "lcov.info" | wc -l)
+          echo "- **Coverage files found**: $COVERAGE_FILES" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ inputs.coverage_required }}" = "true" ]; then
+            echo "- **Coverage source**: CI Artifacts" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **Coverage source**: Generated locally" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Project information
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [📊 SonarCloud Dashboard](https://sonarcloud.io/project/overview?id=tiagolpadua_juice-shop)" >> $GITHUB_STEP_SUMMARY
+          echo "- [📈 Quality Gate](https://sonarcloud.io/project/overview?id=tiagolpadua_juice-shop)" >> $GITHUB_STEP_SUMMARY
+          echo "- [🔍 Issues](https://sonarcloud.io/project/issues?id=tiagolpadua_juice-shop)" >> $GITHUB_STEP_SUMMARY
+          
+          # Educational context
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ⚠️ Educational Context" >> $GITHUB_STEP_SUMMARY
+          echo "This is **OWASP Juice Shop** - an intentionally vulnerable application for security training." >> $GITHUB_STEP_SUMMARY
+          echo "Some security issues and code smells are **by design** and should not be \"fixed\"." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🎓 [Learn more about OWASP Juice Shop](https://owasp-juice.shop)" >> $GITHUB_STEP_SUMMARY
+          
+      # Comment on Pull Request with results
+      - name: 📝 Comment on Pull Request
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const analysisSuccess = '${{ steps.sonar-manual.conclusion }}' === 'success' || '${{ steps.sonar-action.conclusion }}' === 'success';
+            const qualityGateStatus = '${{ steps.quality-gate.outputs.quality-gate-status }}' || 'unknown';
+            
+            let comment = `## 📊 SonarCloud Quality Analysis\n\n`;
+            
+            // Analysis status
+            if (analysisSuccess) {
+              comment += `✅ **Analysis**: Completed successfully\n`;
+            } else {
+              comment += `❌ **Analysis**: Failed or skipped\n`;
+            }
+            
+            // Quality gate status
+            if (qualityGateStatus === 'PASSED') {
+              comment += `✅ **Quality Gate**: PASSED\n`;
+            } else if (qualityGateStatus === 'FAILED') {
+              comment += `❌ **Quality Gate**: FAILED\n`;
+            } else {
+              comment += `⚠️ **Quality Gate**: ${qualityGateStatus}\n`;
+            }
+            
+            comment += `\n### 🔗 View Results\n`;
+            comment += `- [📊 SonarCloud Dashboard](https://sonarcloud.io/project/overview?id=tiagolpadua_juice-shop)\n`;
+            comment += `- [🔍 Issues & Hotspots](https://sonarcloud.io/project/issues?id=tiagolpadua_juice-shop)\n`;
+            comment += `- [📈 Metrics](https://sonarcloud.io/project/measures?id=tiagolpadua_juice-shop)\n\n`;
+            
+            comment += `### ⚠️ Educational Notice\n`;
+            comment += `This is OWASP Juice Shop - an intentionally vulnerable application for security training.\n`;
+            comment += `Some security issues are by design and should not be "fixed".\n\n`;
+            comment += `🎓 [Learn more](https://owasp-juice.shop)`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+            
+      # Fail workflow if quality gate fails (optional)
+      - name: 🚨 Quality Gate Enforcement
+        if: steps.quality-gate.outputs.quality-gate-status == 'FAILED' && github.event_name == 'pull_request'
+        run: |
+          echo "::warning::Quality Gate failed! Please review the SonarCloud findings."
+          echo "This is an educational application, so some failures are expected."
+          echo "Review the issues and determine which ones should be addressed."
+          # Note: Not failing the workflow to maintain educational context
+          # exit 1  # Uncomment to fail PR on quality gate failure
