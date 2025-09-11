@@ -25,3 +25,12 @@ jobs:
 
       - name: "Lint source code"
         run: npm run lint
+
+      - name: Run TruffleHog
+        id: trufflehog
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/pwd" -w /pwd \
+            trufflesecurity/trufflehog:latest \
+            filesystem /pwd \
+            --exclude-paths .trufflehogignore \
+            --fail
