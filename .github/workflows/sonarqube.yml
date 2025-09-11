@@ -236,7 +236,7 @@ jobs:
           # Prepare analysis parameters
           ANALYSIS_PARAMS=(
             "-Dsonar.projectKey=tiagolpadua_juice-shop"
-            "-Dsonar.organization=owasp-juice-shop"
+            "-Dsonar.organization=tiagolpadua"
             "-Dsonar.sources=."
             "-Dsonar.host.url=https://sonarcloud.io"
             "-Dsonar.token=${{ secrets.SONAR_TOKEN }}"
@@ -298,7 +298,7 @@ jobs:
         with:
           args: >
             -Dsonar.projectKey=tiagolpadua_juice-shop
-            -Dsonar.organization=owasp-juice-shop
+            -Dsonar.organization=tiagolpadua
             -Dsonar.projectVersion=${{ github.sha }}
             -Dsonar.scm.revision=${{ github.sha }}
             -Dsonar.exclusions=**/node_modules/**,**/build/**,**/dist/**,**/coverage/**,**/*.min.js,**/vendor/**,frontend/src/assets/**
@@ -355,8 +355,8 @@ jobs:
           # Project information
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🔗 Links" >> $GITHUB_STEP_SUMMARY
-          echo "- [📊 SonarCloud Dashboard](https://sonarcloud.io/dashboard?id=tiagolpadua_juice-shop)" >> $GITHUB_STEP_SUMMARY
-          echo "- [📈 Quality Gate](https://sonarcloud.io/dashboard?id=tiagolpadua_juice-shop)" >> $GITHUB_STEP_SUMMARY
+          echo "- [📊 SonarCloud Dashboard](https://sonarcloud.io/project/overview?id=tiagolpadua_juice-shop)" >> $GITHUB_STEP_SUMMARY
+          echo "- [📈 Quality Gate](https://sonarcloud.io/project/overview?id=tiagolpadua_juice-shop)" >> $GITHUB_STEP_SUMMARY
           echo "- [🔍 Issues](https://sonarcloud.io/project/issues?id=tiagolpadua_juice-shop)" >> $GITHUB_STEP_SUMMARY
           
           # Educational context
@@ -395,9 +395,9 @@ jobs:
             }
             
             comment += `\n### 🔗 View Results\n`;
-            comment += `- [📊 SonarCloud Dashboard](https://sonarcloud.io/dashboard?id=tiagolpadua_juice-shop)\n`;
+            comment += `- [📊 SonarCloud Dashboard](https://sonarcloud.io/project/overview?id=tiagolpadua_juice-shop)\n`;
             comment += `- [🔍 Issues & Hotspots](https://sonarcloud.io/project/issues?id=tiagolpadua_juice-shop)\n`;
-            comment += `- [📈 Metrics](https://sonarcloud.io/component_measures?id=tiagolpadua_juice-shop)\n\n`;
+            comment += `- [📈 Metrics](https://sonarcloud.io/project/measures?id=tiagolpadua_juice-shop)\n\n`;
             
             comment += `### ⚠️ Educational Notice\n`;
             comment += `This is OWASP Juice Shop - an intentionally vulnerable application for security training.\n`;
