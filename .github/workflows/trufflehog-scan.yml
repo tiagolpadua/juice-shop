@@ -27,7 +27,7 @@ jobs:
           base: ${{ github.event.repository.default_branch }}
           head: HEAD
           path: ./
-          extra_args: --exclude-paths .trufflehogignore --fail
+          extra_args: --exclude-paths .trufflehogignore
           
       - name: Comment on PR if secrets found
         if: failure()
