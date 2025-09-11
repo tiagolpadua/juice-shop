@@ -1,11 +1,7 @@
 name: Continuous Integration (CI)
 
-# on:
-  # push:
-  #   branches: [ master ]
-  # pull_request:
-  #   types: [opened, synchronize, reopened]
 on:
+  push:
   pull_request:
     types: [opened, synchronize, reopened]
 
