@@ -23,9 +23,9 @@ jobs:
       - name: Run TruffleHog
         id: trufflehog
         uses: trufflesecurity/trufflehog@main
-        with:
-          path: ./
-          extra_args: --exclude-paths .trufflehogignore
+        # with:
+        #   path: ./
+          # extra_args: --only-verified --exclude-paths .trufflehogignore
           
       - name: Comment on PR if secrets found
         if: failure()
