@@ -22,10 +22,12 @@ jobs:
           
       - name: Run TruffleHog
         id: trufflehog
-        uses: trufflesecurity/trufflehog@main
-        # with:
-        #   path: ./
-          # extra_args: --only-verified --exclude-paths .trufflehogignore
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/pwd" -w /pwd \
+            trufflesecurity/trufflehog:latest \
+            filesystem /pwd \
+            --exclude-paths .trufflehogignore \
+            --fail
           
       - name: Comment on PR if secrets found
         if: failure()
