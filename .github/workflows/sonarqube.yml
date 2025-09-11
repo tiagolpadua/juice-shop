@@ -268,9 +268,10 @@ jobs:
           # Add exclusions and language configuration
           ANALYSIS_PARAMS+=(
             "-Dsonar.exclusions=**/node_modules/**,**/build/**,**/dist/**,**/coverage/**,**/*.min.js,**/vendor/**,frontend/src/assets/**,**/*.spec.ts,**/*.test.js,**/*.py,**/*.python,**/scripts/**,**/tools/**"
-            "-Dsonar.test.exclusions=**/node_modules/**,test/**,**/*.spec.ts,**/*.test.js"
+            "-Dsonar.test.exclusions=**/node_modules/**,**/*.spec.ts,**/*.test.js"
             "-Dsonar.sources=.,frontend/src"
-            "-Dsonar.tests=test,frontend/src/**/*.spec.ts"
+            "-Dsonar.tests=test"
+            "-Dsonar.test.inclusions=test/**/*.spec.ts,test/**/*.test.ts,frontend/src/**/*.spec.ts"
             "-Dsonar.typescript.file.suffixes=.ts,.tsx"
             "-Dsonar.javascript.file.suffixes=.js,.jsx"
             "-Dsonar.inclusions=**/*.ts,**/*.tsx,**/*.js,**/*.jsx,**/*.html,**/*.css,**/*.scss"
@@ -309,7 +310,8 @@ jobs:
             -Dsonar.projectVersion=${{ github.sha }}
             -Dsonar.scm.revision=${{ github.sha }}
             -Dsonar.sources=.,frontend/src
-            -Dsonar.tests=test,frontend/src/**/*.spec.ts
+            -Dsonar.tests=test
+            -Dsonar.test.inclusions=test/**/*.spec.ts,test/**/*.test.ts,frontend/src/**/*.spec.ts
             -Dsonar.exclusions=**/node_modules/**,**/build/**,**/dist/**,**/coverage/**,**/*.min.js,**/vendor/**,frontend/src/assets/**,**/*.spec.ts,**/*.test.js,**/*.py,**/*.python,**/scripts/**,**/tools/**
             -Dsonar.typescript.file.suffixes=.ts,.tsx
             -Dsonar.javascript.file.suffixes=.js,.jsx
