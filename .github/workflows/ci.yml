@@ -1,4 +1,4 @@
-name: SonarQube Code Quality Analysis
+name: Continuous Integration (CI)
 
 on:
   push:
@@ -12,8 +12,8 @@ permissions:
   checks: write
 
 jobs:
-  sonarqube:
-    name: SonarQube Analysis
+  ci:
+    name: CI
     runs-on: ubuntu-latest
     
     steps:
@@ -107,3 +107,43 @@ jobs:
           echo "Some code quality issues and security vulnerabilities are by design"
           echo "Quality gate failures in this context are expected and educational"
           echo "Only fix issues that are explicitly requested or unintentional"
+
+      - name: Run TruffleHog
+        id: trufflehog
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/pwd" -w /pwd \
+            trufflesecurity/trufflehog:latest \
+            filesystem /pwd \
+            --exclude-paths .trufflehogignore \
+            --fail
+          
+      - name: Comment on PR if secrets found
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const comment = `⚠️ **Security Alert: Secrets Detected**
+            
+            TruffleHog has detected potential secrets in this pull request. Please review and remove any exposed credentials before this PR can be merged.
+            
+            Common issues:
+            - API keys or tokens
+            - Database passwords
+            - Private keys
+            - Authentication credentials
+            
+            Please check the TruffleHog scan results in the GitHub Actions logs for specific details.`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+            
+      - name: Fail if secrets detected
+        if: failure()
+        run: |
+          echo "❌ TruffleHog detected secrets in the codebase"
+          echo "This PR cannot be merged until all secrets are removed"
+          exit 1
