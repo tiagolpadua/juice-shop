@@ -2,7 +2,7 @@ name: "Code Quality"
 on:
   push:
 jobs:
-  lint:
+  code-quality:
     runs-on: ubuntu-latest
     steps:
       - name: 📥 Checkout repository
@@ -25,6 +25,12 @@ jobs:
 
       - name: "Lint source code"
         run: npm run lint
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v4.1.0 # Ex: v4.1.0, See the latest version at https://github.com/marketplace/actions/official-sonarqube-scan
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
 
       - name: Run TruffleHog
         id: trufflehog
