@@ -296,13 +296,15 @@ jobs:
         continue-on-error: true
         
       # SonarCloud Analysis (Method 2: Official Action - Fallback)
+      # Using sonarqube-scan-action@v3 (replaces deprecated sonarcloud-github-action)
       - name: 📊 SonarCloud Analysis (Official Action)
         id: sonar-action
         # if: steps.sonar-manual.conclusion == 'failure' && env.SONAR_TOKEN != ''
-        uses: SonarSource/sonarcloud-github-action@master
+        uses: SonarSource/sonarqube-scan-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
         with:
           args: >
             -Dsonar.projectKey=tiagolpadua_juice-shop
