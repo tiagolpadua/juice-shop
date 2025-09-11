@@ -208,6 +208,7 @@ jobs:
         
       # Setup SonarQube Scanner (Method 1: Manual Installation)
       - name: 📊 Setup SonarQube Scanner
+        if: false
         id: setup-scanner
         run: |
           echo "Installing SonarQube Scanner v${{ env.SONAR_SCANNER_VERSION }}..."
@@ -297,7 +298,7 @@ jobs:
       # SonarCloud Analysis (Method 2: Official Action - Fallback)
       - name: 📊 SonarCloud Analysis (Official Action)
         id: sonar-action
-        if: steps.sonar-manual.conclusion == 'failure' && env.SONAR_TOKEN != ''
+        # if: steps.sonar-manual.conclusion == 'failure' && env.SONAR_TOKEN != ''
         uses: SonarSource/sonarcloud-github-action@master
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
