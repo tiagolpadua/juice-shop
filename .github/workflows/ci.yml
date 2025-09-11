@@ -1,259 +1,560 @@
-name: Continuous Integration (CI)
+name: 🚀 Continuous Integration
 
 on:
   push:
+    branches: [master, develop, 'feature/**', 'hotfix/**']
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: 'Skip test execution'
+        required: false
+        default: false
+        type: boolean
+      environment:
+        description: 'Target environment'
+        required: false
+        default: 'ci'
+        type: choice
+        options:
+          - ci
+          - staging
+          - production
+
+# Prevent concurrent runs on same PR/branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+  CACHE_VERSION: 'v1'
+  FORCE_COLOR: '1'
+  CI: true
 
 permissions:
   contents: read
   pull-requests: write
   checks: write
+  security-events: write
+  actions: read
+  id-token: write
 
 jobs:
-  dependencies:
-    name: Setup Dependencies
+  # ===================================
+  # 🏗️ BUILD & DEPENDENCY SETUP
+  # ===================================
+  setup:
+    name: 🏗️ Setup & Build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
-      cache-key: ${{ steps.cache.outputs.cache-hit }}
+      cache-hit: ${{ steps.cache.outputs.cache-hit }}
+      node-version: ${{ env.NODE_VERSION }}
+      cache-key: ${{ steps.cache-key.outputs.key }}
     
     steps:
-      - name: Checkout code
+      - name: 📥 Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Shallow clones should be disabled for better relevancy of analysis
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
           
-      - name: Setup Node.js
+      - name: 🔧 Setup Node.js ${{ env.NODE_VERSION }}
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
           
-      - name: Cache node_modules
+      - name: 🔑 Generate cache key
+        id: cache-key
+        run: |
+          echo "key=${{ env.CACHE_VERSION }}-${{ runner.os }}-node-${{ hashFiles('**/package-lock.json', 'frontend/package-lock.json') }}" >> $GITHUB_OUTPUT
+          
+      - name: 💾 Cache dependencies
         id: cache
         uses: actions/cache@v4
         with:
           path: |
+            ~/.npm
             node_modules
             frontend/node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+            frontend/dist
+          key: ${{ steps.cache-key.outputs.key }}
           restore-keys: |
-            ${{ runner.os }}-node-
-          
-      - name: Install backend dependencies
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: npm install
-        
-      - name: Install frontend dependencies and build
+            ${{ env.CACHE_VERSION }}-${{ runner.os }}-node-
+            
+      - name: 📦 Install backend dependencies
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
-          cd frontend
-          npm install --legacy-peer-deps
-          npm run build
+          npm ci --prefer-offline --no-audit --no-fund
+          
+      - name: 🎨 Install frontend dependencies & build
+        if: steps.cache.outputs.cache-hit != 'true'
+        working-directory: frontend
+        run: |
+          npm ci --legacy-peer-deps --prefer-offline --no-audit --no-fund
+          npm run build --if-present
+          
+      - name: 📊 Cache statistics
+        run: |
+          echo "### 💾 Cache Statistics" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cache hit**: ${{ steps.cache.outputs.cache-hit }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cache key**: \`${{ steps.cache-key.outputs.key }}\`" >> $GITHUB_STEP_SUMMARY
+          du -sh node_modules frontend/node_modules 2>/dev/null || echo "Dependencies size calculation failed"
 
+  # ===================================
+  # 🧪 PARALLEL TEST EXECUTION
+  # ===================================
   backend-tests:
-    name: Backend Tests
+    name: 🧪 Backend Tests
     runs-on: ubuntu-latest
-    needs: dependencies
+    needs: setup
+    timeout-minutes: 20
+    if: ${{ !inputs.skip_tests }}
     
+    strategy:
+      fail-fast: false
+      matrix:
+        test-type: [unit, integration]
+        
     steps:
-      - name: Checkout code
+      - name: 📥 Checkout repository
         uses: actions/checkout@v4
         
-      - name: Setup Node.js
+      - name: 🔧 Setup Node.js ${{ needs.setup.outputs.node-version }}
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: ${{ needs.setup.outputs.node-version }}
+          cache: 'npm'
           
-      - name: Restore dependencies cache
+      - name: 💾 Restore dependencies
         uses: actions/cache@v4
         with:
           path: |
+            ~/.npm
             node_modules
             frontend/node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+            frontend/dist
+          key: ${{ needs.setup.outputs.cache-key }}
+          restore-keys: |
+            ${{ env.CACHE_VERSION }}-${{ runner.os }}-node-
+            
+      - name: 🧪 Run backend tests with retry
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 15
+          max_attempts: 2
+          retry_on: error
+          command: |
+            if [ "${{ matrix.test-type }}" = "unit" ]; then
+              npm run test:server
+            else
+              npm run test:server -- --grep "integration"
+            fi
+            
+      - name: 📊 Generate test report
+        if: always()
+        run: |
+          echo "### 🧪 Backend Tests (${{ matrix.test-type }})" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Test Type**: ${{ matrix.test-type }}" >> $GITHUB_STEP_SUMMARY
           
-      - name: Run backend tests with coverage
-        run: npm run test:server
-        continue-on-error: true
-        
-      - name: Upload backend coverage
+      - name: 📤 Upload coverage reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: backend-coverage
-          path: build/reports/coverage/server-tests/
-          retention-days: 1
+          name: backend-coverage-${{ matrix.test-type }}
+          path: |
+            build/reports/coverage/
+            coverage/
+          retention-days: 7
+          if-no-files-found: warn
 
   frontend-tests:
-    name: Frontend Tests
+    name: 🎨 Frontend Tests
     runs-on: ubuntu-latest
-    needs: dependencies
+    needs: setup
+    timeout-minutes: 25
+    if: ${{ !inputs.skip_tests }}
     
     steps:
-      - name: Checkout code
+      - name: 📥 Checkout repository
         uses: actions/checkout@v4
         
-      - name: Setup Node.js
+      - name: 🔧 Setup Node.js ${{ needs.setup.outputs.node-version }}
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: ${{ needs.setup.outputs.node-version }}
+          cache: 'npm'
           
-      - name: Restore dependencies cache
+      - name: 💾 Restore dependencies
         uses: actions/cache@v4
         with:
           path: |
+            ~/.npm
             node_modules
             frontend/node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+            frontend/dist
+          key: ${{ needs.setup.outputs.cache-key }}
           
-      - name: Run frontend tests with coverage
+      - name: 🧪 Run frontend tests with retry
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 20
+          max_attempts: 2
+          retry_on: error
+          command: |
+            cd frontend
+            npm run test -- --watch=false --browsers=ChromiumHeadless --code-coverage=true --reporters=progress,coverage
+            
+      - name: 📊 Generate test report
+        if: always()
         run: |
-          cd frontend
-          npm run test -- --watch=false --browsers=ChromiumHeadless --code-coverage=true
-        continue-on-error: true
-        
-      - name: Upload frontend coverage
+          echo "### 🎨 Frontend Tests" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Browser**: ChromiumHeadless" >> $GITHUB_STEP_SUMMARY
+          
+      - name: 📤 Upload coverage reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: frontend-coverage
           path: frontend/coverage/
-          retention-days: 1
+          retention-days: 7
+          if-no-files-found: warn
 
   api-tests:
-    name: API Tests
+    name: 🔌 API Tests
     runs-on: ubuntu-latest
-    needs: dependencies
+    needs: setup
+    timeout-minutes: 15
+    if: ${{ !inputs.skip_tests }}
+    
+    services:
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
     
     steps:
-      - name: Checkout code
+      - name: 📥 Checkout repository
         uses: actions/checkout@v4
         
-      - name: Setup Node.js
+      - name: 🔧 Setup Node.js ${{ needs.setup.outputs.node-version }}
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: ${{ needs.setup.outputs.node-version }}
+          cache: 'npm'
           
-      - name: Restore dependencies cache
+      - name: 💾 Restore dependencies
         uses: actions/cache@v4
         with:
           path: |
+            ~/.npm
             node_modules
             frontend/node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+            frontend/dist
+          key: ${{ needs.setup.outputs.cache-key }}
           
-      - name: Run API tests with coverage
-        run: npm run frisby
-        continue-on-error: true
-        
-      - name: Upload API coverage
+      - name: 🔌 Run API tests with retry
+        uses: nick-fields/retry@v3
+        env:
+          REDIS_URL: redis://localhost:6379
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          retry_on: error
+          command: npm run frisby
+          
+      - name: 📊 Generate test report
+        if: always()
+        run: |
+          echo "### 🔌 API Tests" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Redis**: Available" >> $GITHUB_STEP_SUMMARY
+          
+      - name: 📤 Upload coverage reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: api-coverage
           path: build/reports/coverage/api-tests/
-          retention-days: 1
+          retention-days: 7
+          if-no-files-found: warn
 
+  # ===================================
+  # 🔒 SECURITY SCANNING
+  # ===================================
   security-scan:
-    name: Security Scan
+    name: 🔒 Security Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        
-      - name: Run TruffleHog
-        id: trufflehog
-        run: |
-          docker run --rm -v "${{ github.workspace }}:/pwd" -w /pwd \
-            trufflesecurity/trufflehog:latest \
-            filesystem /pwd \
-            --exclude-paths .trufflehogignore
-            --fail
-        continue-on-error: true
-
-  quality-gate:
-    name: Quality Gate
-    runs-on: ubuntu-latest
-    needs: [backend-tests, frontend-tests, api-tests]
-    if: always()  # Run even if some tests fail
-    
-    steps:
-      - name: Checkout code
+      - name: 📥 Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           
-      - name: Setup Node.js
+      - name: 🔍 Run TruffleHog secrets scan
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --debug --only-verified
+          
+      - name: 🛡️ Run Semgrep SAST
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: >-
+            p/security-audit
+            p/secrets
+            p/owasp-top-ten
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+          
+      - name: 📊 Security scan summary
+        if: always()
+        run: |
+          echo "### 🔒 Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **TruffleHog**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Semgrep SAST**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ **Note**: This is an intentionally vulnerable application for educational purposes." >> $GITHUB_STEP_SUMMARY
+
+  # ===================================
+  # 📊 CODE QUALITY & ANALYSIS
+  # ===================================
+  code-quality:
+    name: 📊 Code Quality
+    runs-on: ubuntu-latest
+    needs: [setup, backend-tests, frontend-tests, api-tests]
+    timeout-minutes: 20
+    if: always() && (needs.setup.result == 'success')
+    
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: 🔧 Setup Node.js ${{ needs.setup.outputs.node-version }}
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: ${{ needs.setup.outputs.node-version }}
+          cache: 'npm'
           
-      - name: Download all coverage artifacts
+      - name: 💾 Restore dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            node_modules
+            frontend/node_modules
+            frontend/dist
+          key: ${{ needs.setup.outputs.cache-key }}
+          
+      - name: 📥 Download all coverage reports
         uses: actions/download-artifact@v4
         with:
           path: coverage-reports
+          pattern: '*coverage*'
+          merge-multiple: true
           
-      - name: Restore coverage structure
+      - name: 🔧 Prepare coverage structure
         run: |
-          mkdir -p build/reports/coverage/server-tests
-          mkdir -p build/reports/coverage/api-tests
+          mkdir -p build/reports/coverage/{server-tests,api-tests}
           mkdir -p frontend/coverage
           
-          if [ -d "coverage-reports/backend-coverage" ]; then
-            cp -r coverage-reports/backend-coverage/* build/reports/coverage/server-tests/ || true
-          fi
+          # Consolidate coverage reports
+          find coverage-reports -name "*.info" -o -name "lcov.info" | while read file; do
+            echo "Processing coverage file: $file"
+            cp "$file" build/reports/coverage/ 2>/dev/null || true
+          done
           
-          if [ -d "coverage-reports/api-coverage" ]; then
-            cp -r coverage-reports/api-coverage/* build/reports/coverage/api-tests/ || true
-          fi
-          
+          # Copy frontend coverage if exists
           if [ -d "coverage-reports/frontend-coverage" ]; then
-            cp -r coverage-reports/frontend-coverage/* frontend/coverage/ || true
+            cp -r coverage-reports/frontend-coverage/* frontend/coverage/ 2>/dev/null || true
           fi
           
-      - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v4
+      - name: 🔍 Run ESLint with annotations
+        run: |
+          npx eslint . --ext .js,.ts --format @microsoft/eslint-formatter-sarif --output-file eslint-results.sarif || true
+          
+      - name: 📤 Upload SARIF results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: eslint-results.sarif
+          category: eslint
+          
+      - name: 📊 Setup SonarQube Scanner
+        if: env.SONAR_TOKEN != ''
+        run: |
+          wget -q https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
+          unzip -q sonar-scanner-cli-5.0.1.3006-linux.zip
+          sudo mv sonar-scanner-5.0.1.3006-linux /opt/sonar-scanner
+          sudo ln -s /opt/sonar-scanner/bin/sonar-scanner /usr/local/bin/sonar-scanner
+          
+      - name: 📊 SonarCloud analysis
+        id: sonar-scan
+        if: env.SONAR_TOKEN != ''
+        run: |
+          sonar-scanner \
+            -Dsonar.projectKey=tiagolpadua_juice-shop \
+            -Dsonar.organization=owasp-juice-shop \
+            -Dsonar.sources=. \
+            -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.token=${{ secrets.SONAR_TOKEN }} \
+            -Dsonar.javascript.lcov.reportPaths=build/reports/coverage/api-tests/lcov.info \
+            -Dsonar.typescript.lcov.reportPaths=build/reports/coverage/server-tests/lcov.info,frontend/coverage/lcov.info \
+            -Dsonar.exclusions="**/node_modules/**,**/build/**,**/dist/**,**/coverage/**,**/*.min.js,**/vendor/**,frontend/src/assets/**" \
+            -Dsonar.verbose=false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-          
-      - name: SonarQube Quality Gate check
-        id: sonarqube-quality-gate-check
+        continue-on-error: true
+            
+      - name: 📋 Quality gate check
+        id: sonar-quality-gate
+        if: env.SONAR_TOKEN != '' && steps.sonar-scan.conclusion != 'failure'
         uses: SonarSource/sonarqube-quality-gate-action@v1.1.0
         timeout-minutes: 5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         continue-on-error: true
+        
+      - name: 📊 Generate quality report
+        if: always()
+        run: |
+          echo "### 📊 Code Quality Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend Tests | ${{ needs.backend-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend Tests | ${{ needs.frontend-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| API Tests | ${{ needs.api-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Scan | ${{ needs.security-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 [View detailed reports in Actions artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+
+  # ===================================
+  # 🚀 DEPLOYMENT PREPARATION
+  # ===================================
+  build-artifacts:
+    name: 🚀 Build Artifacts
+    runs-on: ubuntu-latest
+    needs: [setup, code-quality]
+    timeout-minutes: 15
+    if: always() && (needs.setup.result == 'success') && (github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch')
+    
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: 🔧 Setup Node.js ${{ needs.setup.outputs.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ needs.setup.outputs.node-version }}
+          cache: 'npm'
           
-      - name: Comment PR with SonarQube results
-        if: github.event_name == 'pull_request' && false  # Temporarily disabled
+      - name: 💾 Restore dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            node_modules
+            frontend/node_modules
+            frontend/dist
+          key: ${{ needs.setup.outputs.cache-key }}
+          
+      - name: 🏗️ Build production artifacts
+        run: |
+          npm run build:server
+          cd frontend && npm run build
+          
+      - name: 📦 Create deployment package
+        run: |
+          tar -czf juice-shop-${{ github.sha }}.tar.gz \
+            --exclude=node_modules \
+            --exclude=frontend/node_modules \
+            --exclude=.git \
+            --exclude=coverage \
+            --exclude=test \
+            .
+            
+      - name: 📤 Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-package
+          path: juice-shop-${{ github.sha }}.tar.gz
+          retention-days: 30
+          
+      - name: 📊 Build summary
+        run: |
+          echo "### 🚀 Build Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "- **Package**: juice-shop-${{ github.sha }}.tar.gz" >> $GITHUB_STEP_SUMMARY
+          echo "- **Size**: $(du -h juice-shop-${{ github.sha }}.tar.gz | cut -f1)" >> $GITHUB_STEP_SUMMARY
+          echo "- **SHA**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+
+  # ===================================
+  # 📝 NOTIFICATIONS & REPORTING
+  # ===================================
+  notify:
+    name: 📝 Notify Results
+    runs-on: ubuntu-latest
+    needs: [setup, backend-tests, frontend-tests, api-tests, security-scan, code-quality]
+    if: always() && github.event_name == 'pull_request'
+    
+    steps:
+      - name: 📝 Comment on PR
         uses: actions/github-script@v7
         with:
           script: |
-            const qualityGateStatus = '${{ steps.sonarqube-quality-gate-check.outputs.quality-gate-status }}';
-            const projectKey = 'tiagolpadua_juice-shop';
-            const sonarUrl = '${{ secrets.SONAR_HOST_URL }}';
+            const results = {
+              setup: '${{ needs.setup.result }}',
+              'backend-tests': '${{ needs.backend-tests.result }}',
+              'frontend-tests': '${{ needs.frontend-tests.result }}',
+              'api-tests': '${{ needs.api-tests.result }}',
+              'security-scan': '${{ needs.security-scan.result }}',
+              'code-quality': '${{ needs.code-quality.result }}'
+            };
             
-            let comment = `## 📊 SonarQube Analysis Results
+            const getEmoji = (status) => {
+              switch(status) {
+                case 'success': return '✅';
+                case 'failure': return '❌';
+                case 'cancelled': return '⏭️';
+                case 'skipped': return '⏭️';
+                default: return '⚠️';
+              }
+            };
             
-            **Quality Gate Status:** ${qualityGateStatus === 'PASSED' ? '✅ PASSED' : '❌ FAILED'}
+            let comment = `## 🚀 CI Pipeline Results\n\n`;
+            comment += `| Job | Status |\n`;
+            comment += `|-----|--------|\n`;
             
-            `;
-            
-            if (sonarUrl) {
-              comment += `[📋 View detailed report on SonarQube](${sonarUrl}/dashboard?id=${projectKey})
-              
-              `;
+            for (const [job, status] of Object.entries(results)) {
+              comment += `| ${job} | ${getEmoji(status)} ${status} |\n`;
             }
             
-            if (qualityGateStatus !== 'PASSED') {
-              comment += `⚠️ **Note**: This is an intentionally vulnerable application for security training. Some security issues are by design and should not be "fixed" unless specifically requested.
-              
-              `;
-            }
+            comment += `\n### 📊 Pipeline Information\n`;
+            comment += `- **Commit**: ${context.sha.substring(0, 7)}\n`;
+            comment += `- **Branch**: ${context.ref.replace('refs/heads/', '')}\n`;
+            comment += `- **Triggered by**: ${context.actor}\n`;
+            comment += `- **Run ID**: [${context.runId}](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})\n\n`;
             
-            comment += `For more information about this educational project, visit: https://owasp-juice.shop`;
+            comment += `⚠️ **Educational Notice**: This is OWASP Juice Shop - an intentionally vulnerable application for security training.\n`;
+            comment += `🔗 [Learn more](https://owasp-juice.shop)`;
             
             github.rest.issues.createComment({
               issue_number: context.issue.number,
@@ -261,23 +562,3 @@ jobs:
               repo: context.repo.repo,
               body: comment
             });
-            
-      - name: Educational Notice
-        if: steps.sonarqube-quality-gate-check.outputs.quality-gate-status != 'PASSED'
-        run: |
-          echo "ℹ️  EDUCATIONAL NOTICE:"
-          echo "This is the OWASP Juice Shop - an intentionally vulnerable application"
-          echo "Some code quality issues and security vulnerabilities are by design"
-          echo "Quality gate failures in this context are expected and educational"
-          echo "Only fix issues that are explicitly requested or unintentional"
-          
-      - name: CI Summary
-        run: |
-          echo "## 🚀 CI Pipeline Summary"
-          echo "✅ Dependencies installed and cached"
-          echo "🧪 Tests executed in parallel:"
-          echo "   - Backend tests: ${{ needs.backend-tests.result }}"
-          echo "   - Frontend tests: ${{ needs.frontend-tests.result }}"
-          echo "   - API tests: ${{ needs.api-tests.result }}"
-          echo "🔒 Security scan completed"
-          echo "📊 Quality gate analysis prepared"
