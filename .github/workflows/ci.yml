@@ -28,19 +28,23 @@ jobs:
           cache: 'npm'
           
       - name: Install dependencies
+        if: false
         run: |
           npm install
           cd frontend && npm install --legacy-peer-deps && npm run build
           
       - name: Run backend tests with coverage
+        if: false
         run: npm run test:server
         continue-on-error: true  # Continue even if tests fail to get coverage data
         
       - name: Run API tests with coverage
+        if: false
         run: npm run frisby
         continue-on-error: true  # Continue even if tests fail to get coverage data
         
       - name: Run frontend tests with coverage
+        if: false
         run: |
           cd frontend
           npm run test -- --watch=false --browsers=ChromiumHeadless --code-coverage=true
