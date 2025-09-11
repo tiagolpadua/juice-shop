@@ -167,6 +167,7 @@ jobs:
             trufflesecurity/trufflehog:latest \
             filesystem /pwd \
             --exclude-paths .trufflehogignore
+            --fail
         continue-on-error: true
 
   quality-gate:
@@ -210,7 +211,6 @@ jobs:
           fi
           
       - name: SonarQube Scan
-        if: false  # Temporarily disabled
         uses: SonarSource/sonarqube-scan-action@v4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -218,7 +218,6 @@ jobs:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
           
       - name: SonarQube Quality Gate check
-        if: false  # Temporarily disabled
         id: sonarqube-quality-gate-check
         uses: SonarSource/sonarqube-quality-gate-action@v1.1.0
         timeout-minutes: 5
