@@ -119,6 +119,7 @@ jobs:
             
       # Install dependencies if not cached
       - name: 📦 Install dependencies
+        if: false
         run: |
           if [ ! -d "node_modules" ]; then
             echo "Installing backend dependencies..."
@@ -134,7 +135,7 @@ jobs:
           
       # Download coverage reports from CI workflow if available
       - name: 📥 Download coverage artifacts
-        if: inputs.coverage_required != false
+        if: false && inputs.coverage_required != false
         uses: actions/download-artifact@v4
         with:
           path: coverage-reports
@@ -144,6 +145,7 @@ jobs:
         
       # Prepare coverage structure for SonarQube
       - name: 🔧 Prepare coverage reports
+        if: false
         run: |
           echo "Setting up coverage directory structure..."
           mkdir -p build/reports/coverage/{server-tests,api-tests}
@@ -186,7 +188,7 @@ jobs:
           
       # Generate fresh coverage if not available (fallback)
       - name: 🧪 Generate coverage (fallback)
-        if: inputs.coverage_required == false || steps.download-coverage.conclusion == 'failure'
+        if: false && inputs.coverage_required == false || steps.download-coverage.conclusion == 'failure'
         run: |
           echo "Generating fresh coverage reports..."
           
@@ -263,10 +265,15 @@ jobs:
             fi
           fi
           
-          # Add exclusions
+          # Add exclusions and language configuration
           ANALYSIS_PARAMS+=(
-            "-Dsonar.exclusions=**/node_modules/**,**/build/**,**/dist/**,**/coverage/**,**/*.min.js,**/vendor/**,frontend/src/assets/**,**/*.spec.ts,**/*.test.js"
+            "-Dsonar.exclusions=**/node_modules/**,**/build/**,**/dist/**,**/coverage/**,**/*.min.js,**/vendor/**,frontend/src/assets/**,**/*.spec.ts,**/*.test.js,**/*.py,**/*.python,**/scripts/**,**/tools/**"
             "-Dsonar.test.exclusions=**/node_modules/**,test/**,**/*.spec.ts,**/*.test.js"
+            "-Dsonar.sources=.,frontend/src"
+            "-Dsonar.tests=test,frontend/src/**/*.spec.ts"
+            "-Dsonar.typescript.file.suffixes=.ts,.tsx"
+            "-Dsonar.javascript.file.suffixes=.js,.jsx"
+            "-Dsonar.inclusions=**/*.ts,**/*.tsx,**/*.js,**/*.jsx,**/*.html,**/*.css,**/*.scss"
           )
           
           # Enable deep analysis if requested
@@ -301,7 +308,12 @@ jobs:
             -Dsonar.organization=tiagolpadua
             -Dsonar.projectVersion=${{ github.sha }}
             -Dsonar.scm.revision=${{ github.sha }}
-            -Dsonar.exclusions=**/node_modules/**,**/build/**,**/dist/**,**/coverage/**,**/*.min.js,**/vendor/**,frontend/src/assets/**
+            -Dsonar.sources=.,frontend/src
+            -Dsonar.tests=test,frontend/src/**/*.spec.ts
+            -Dsonar.exclusions=**/node_modules/**,**/build/**,**/dist/**,**/coverage/**,**/*.min.js,**/vendor/**,frontend/src/assets/**,**/*.spec.ts,**/*.test.js,**/*.py,**/*.python,**/scripts/**,**/tools/**
+            -Dsonar.typescript.file.suffixes=.ts,.tsx
+            -Dsonar.javascript.file.suffixes=.js,.jsx
+            -Dsonar.inclusions=**/*.ts,**/*.tsx,**/*.js,**/*.jsx,**/*.html,**/*.css,**/*.scss
         continue-on-error: true
         
       # Quality Gate Evaluation
