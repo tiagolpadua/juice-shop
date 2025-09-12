@@ -10,3 +10,27 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Required for SonarQube blame information and trend analysis
+
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: "Install application minimalistically"
+        run: |
+          npm install --ignore-scripts
+          cd frontend
+          npm install --ignore-scripts --legacy-peer-deps
+      - name: "Lint source code"
+        run: npm run lint
+      
+      - name: Run TruffleHog
+        id: trufflehog
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/pwd" -w /pwd \
+            trufflesecurity/trufflehog:latest \
+            filesystem /pwd \
+            --exclude-paths .trufflehogignore \
+            --fail
