@@ -1,1 +1,1 @@
-npm test
+docker run --rm -v "$(pwd):/pwd" -w /pwd trufflesecurity/trufflehog:latest git file:///pwd --fail --exclude-paths .trufflehogignore
