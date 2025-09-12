@@ -1,0 +1,12 @@
+name: "Code Quality"
+on:
+  push:
+jobs:
+  code-quality:
+    name: "Code Quality"
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required for SonarQube blame information and trend analysis
