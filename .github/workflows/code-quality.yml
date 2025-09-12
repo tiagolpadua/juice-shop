@@ -26,6 +26,12 @@ jobs:
       - name: "Lint source code"
         run: npm run lint
       
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v5.3.1 # Ex: v4.1.0, See the latest version at https://github.com/marketplace/actions/official-sonarqube-scan
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+      
       - name: Run TruffleHog
         id: trufflehog
         run: |
