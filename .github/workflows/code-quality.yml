@@ -20,9 +20,9 @@ jobs:
 
       - name: "Install application minimalistically"
         run: |
-          npm install --ignore-scripts
+          npm install --ignore-scripts --omit=optional
           cd frontend
-          npm install --ignore-scripts --legacy-peer-deps
+          npm install --ignore-scripts --legacy-peer-deps --omit=optional
       - name: "Lint source code"
         run: npm run lint
       
