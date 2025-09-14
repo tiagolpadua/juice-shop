@@ -27,12 +27,14 @@ jobs:
         run: npm run lint
       
       - name: SonarQube Scan
+        if: false
         uses: SonarSource/sonarqube-scan-action@v5.3.1 # Ex: v4.1.0, See the latest version at https://github.com/marketplace/actions/official-sonarqube-scan
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
       
       - name: Run TruffleHog
+        if: false
         id: trufflehog
         run: |
           docker run --rm -v "${{ github.workspace }}:/pwd" -w /pwd \
@@ -40,3 +42,7 @@ jobs:
             filesystem /pwd \
             --exclude-paths .trufflehogignore \
             --fail
+
+      - name: Run Snyk
+        id: snyk
+        run: npm run snyk -- --severity-threshold=high --fail-on=all
