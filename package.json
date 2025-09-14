@@ -73,7 +73,8 @@
     "sbom": "npm run sbom:json && npm run sbom:xml",
     "sbom:json": "cyclonedx-npm --omit=dev --output-format=JSON --output-file=bom.json",
     "sbom:xml": " cyclonedx-npm --omit=dev --output-format=XML  --output-file=bom.xml",
-    "prepare": "husky"
+    "prepare": "husky",
+    "snyk": "snyk test --severity-threshold=high"
   },
   "jest": {
     "transform": {
@@ -177,6 +178,7 @@
     "semver": "^7.6.3",
     "sequelize": "^6.37.3",
     "serve-index": "^1.9.1",
+    "snyk": "^1.1299.0",
     "socket.io": "^3.1.2",
     "sqlite3": "^5.1.7",
     "svg-captcha": "^1.4.0",
