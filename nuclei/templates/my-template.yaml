@@ -1,0 +1,14 @@
+id: example-template
+info:
+  name: Example Vulnerability Check
+  author: yourname
+  severity: medium
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/rest/products/search?q="
+    matchers:
+      - type: word
+        words:
+          - "vulnerable"
+        part: body

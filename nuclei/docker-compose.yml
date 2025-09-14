@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  nuclei:
+    image: projectdiscovery/nuclei:latest
+    container_name: nuclei_scanner
+    volumes:
+      - ./:/app # Monta o diretório local atual no diretório /app do container
+    command: >
+      -u http://host.docker.internal:4200 -t /app/templates -o /app/output/results.txt
+    working_dir: /app
