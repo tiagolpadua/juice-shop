@@ -47,4 +47,4 @@ jobs:
         id: snyk
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        run: npm run snyk -- --severity-threshold=high --fail-on=all
+        run: npm run snyk -- --all-projects --severity-threshold=high --fail-on=all
