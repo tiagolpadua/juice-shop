@@ -14,8 +14,15 @@ jobs:
 
       - name: Install Nuclei
         run: |
+          # Clean up any existing nuclei files/directories
+          rm -rf nuclei nuclei_3.4.10_linux_amd64.zip
+
+          # Download and extract Nuclei
           wget -q https://github.com/projectdiscovery/nuclei/releases/download/v3.4.10/nuclei_3.4.10_linux_amd64.zip
           unzip -o nuclei_3.4.10_linux_amd64.zip
+
+          # Install nuclei binary
+          chmod +x nuclei
           sudo mv nuclei /usr/local/bin/
           nuclei -version
 
