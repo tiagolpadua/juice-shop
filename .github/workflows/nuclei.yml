@@ -1,51 +1,33 @@
 name: Nuclei - Vulnerability Scan
 
 on:
-  push:
-#   push:
-#     branches: [ main ]  # Ou configure para 'pull_request', 'schedule' etc.
-#   schedule:
-#     - cron: '0 0 * * *'  # Executa diariamente à meia-noite (opcional)
-  workflow_dispatch:  # Permite execução manual
+    push:
+    # schedule:
+    #   - cron: '0 0 * * *'
+    workflow_dispatch:
 
 jobs:
   nuclei-scan:
     runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: read
-      issues: write  # Necessário para relatórios em issues
-      security-events: write  # Para o Security Dashboard
-
     steps:
-    # - name: Checkout
-    #   uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Nuclei - Vulnerability Scan
-      id: nuclei_scan
-      uses: projectdiscovery/nuclei-action@main  # Ou especifique uma versão, ex: v0.1.0
-      with:
-        target: "https://juice-shop.herokuapp.com"  # Seu target: URL, domínio ou caminho para arquivo urls.txt
-        # templates: "cves/"  # Opcional: diretório de templates customizados (pasta no repo)
-        # workflows: "custom-workflows/"  # Opcional: workflows customizados
-        output: "nuclei-results.txt"  # Arquivo de saída
-        json: true  # Saída em JSON (opcional)
-        sarif-export: "nuclei.sarif"  # Exporta em SARIF para Security Dashboard
-        # github-report: true  # Cria issues no GitHub (requer GITHUB_TOKEN)
-        # github-token: ${{ secrets.GITHUB_TOKEN }}  # Token para relatórios
+      - name: Nuclei - Vulnerability Scan
+        id: nuclei_scan
+        uses: projectdiscovery/nuclei-action@main
+        with:
+          target: https://juice-shop.herokuapp.com
 
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: nuclei-results
-        path: |
-          nuclei-results.txt
-          nuclei.sarif  # Se usar SARIF
+      - name: GitHub Workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuclei.log
+          path: nuclei.log
 
-    - name: Upload SARIF to Security Dashboard
-      if: steps.nuclei_scan.outputs.sarif_exists == 'true'
-      uses: github/codeql-action/upload-sarif@v3
-      with:
-        sarif_file: nuclei.sarif
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: GitHub Security Dashboard Alerts update
+        uses: github/codeql-action/upload-sarif@v3
+        if: steps.nuclei_scan.outputs.sarif_exists == 'true'
+        with:
+          sarif_file: nuclei.sarif
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
