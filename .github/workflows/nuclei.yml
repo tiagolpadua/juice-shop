@@ -1,6 +1,7 @@
 name: Nuclei - Vulnerability Scan
 
 on:
+  push:
 #   push:
 #     branches: [ main ]  # Ou configure para 'pull_request', 'schedule' etc.
 #   schedule:
