@@ -12,11 +12,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Nuclei - Vulnerability Scan
+      - name: Install Nuclei
+        run: |
+          wget -q https://github.com/projectdiscovery/nuclei/releases/download/v3.4.10/nuclei_3.4.10_linux_amd64.zip
+          unzip -o nuclei_3.4.10_linux_amd64.zip
+          sudo mv nuclei /usr/local/bin/
+          nuclei -version
+
+      - name: Run Nuclei Scan
         id: nuclei_scan
-        uses: projectdiscovery/nuclei-action@main
-        with:
-          target: https://juice-shop.herokuapp.com
+        run: |
+          nuclei -target https://juice-shop.herokuapp.com -json-export nuclei.log -sarif-export nuclei.sarif
 
       - name: GitHub Workflow artifacts
         uses: actions/upload-artifact@v4
@@ -26,7 +32,7 @@ jobs:
 
       - name: GitHub Security Dashboard Alerts update
         uses: github/codeql-action/upload-sarif@v3
-        if: steps.nuclei_scan.outputs.sarif_exists == 'true'
+        if: hashFiles('nuclei.sarif') != ''
         with:
           sarif_file: nuclei.sarif
         env:
